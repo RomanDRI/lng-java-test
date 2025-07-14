@@ -18,7 +18,7 @@ public class StringSearch {
         writeResultsToFile(groups);
     }
 
-    private static List<List<String>> readDataFromFile(String fileName) throws IOException {
+    public List<List<String>> readDataFromFile(String fileName) throws IOException {
         List<List<String>> records = new ArrayList<>();
 
         try (FileInputStream fis = new FileInputStream(fileName);
@@ -46,11 +46,11 @@ public class StringSearch {
         return new ArrayList<>(new LinkedHashSet<>(records));
     }
 
-    private static boolean isValidLine(String line) {
+    public boolean isValidLine(String line) {
         return VALID_LINE_PATTERN.matcher(line).matches();
     }
 
-    private static List<Set<List<String>>> groupRecords(List<List<String>> records) {
+    public List<Set<List<String>>> groupRecords(List<List<String>> records) {
         List<Set<List<String>>> groups = new ArrayList<>();
         Map<Key, Set<List<String>>> valueToGroups = new HashMap<>();
 
@@ -107,7 +107,7 @@ public class StringSearch {
         return groups;
     }
 
-    private static void writeResultsToFile(List<Set<List<String>>> groups) throws IOException {
+    public void writeResultsToFile(List<Set<List<String>>> groups) throws IOException {
         SimpleDateFormat dateFormat = new SimpleDateFormat("yyyyMMdd_HHmm");
         String filename = "output_" + dateFormat.format(new Date()) + ".txt";
 
