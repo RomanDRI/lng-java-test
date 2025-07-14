@@ -14,156 +14,123 @@ public class StringSearch {
 
     public void processData(String fileName) throws IOException {
         List<List<String>> records = readDataFromFile(fileName);
-        Map<Integer, Set<List<String>>> uniqueRecords = groupUniqueRecords(records);
-        Map<Integer, Set<List<String>>> sortedUniqueRecords = sortMapInDscOrder(uniqueRecords);
-        writeResultsToFile(sortedUniqueRecords);
+        List<Set<List<String>>> groups = groupRecords(records);
+        writeResultsToFile(groups);
     }
 
     private static List<List<String>> readDataFromFile(String fileName) throws IOException {
         List<List<String>> records = new ArrayList<>();
 
-        try (FileInputStream fileInputStream = new FileInputStream(fileName);
-             GZIPInputStream gzipInputStream = new GZIPInputStream(fileInputStream);
-             InputStreamReader inputStreamReader = new InputStreamReader(gzipInputStream);
-             BufferedReader bufferedReader = new BufferedReader(inputStreamReader)) {
+        try (FileInputStream fis = new FileInputStream(fileName);
+             GZIPInputStream gzis = new GZIPInputStream(fis);
+             InputStreamReader isr = new InputStreamReader(gzis);
+             BufferedReader br = new BufferedReader(isr)) {
 
             String line;
-            while ((line = bufferedReader.readLine()) != null) {
+            while ((line = br.readLine()) != null) {
                 if (isValidLine(line)) {
                     List<String> recordValues = Arrays.asList(line.split(";"));
+                    for (int i = 0; i < recordValues.size(); i++) {
+                        String value = recordValues.get(i);
+                        if (value.startsWith("\"") && value.endsWith("\"")) {
+                            recordValues.set(i, value.substring(1, value.length() - 1));
+                        }
+                    }
                     records.add(recordValues);
                 } else {
-                    System.out.println("Некорректная строка пропущена " + line);
+                    System.out.println("Некорректная строка пропущена: " + line);
                 }
             }
         }
 
-        return records.stream().distinct().toList();
+        return new ArrayList<>(new LinkedHashSet<>(records));
     }
 
     private static boolean isValidLine(String line) {
         return VALID_LINE_PATTERN.matcher(line).matches();
     }
 
-    private static List<String> findLongestRecord(List<List<String>> records) {
-        List<String> longest = null;
+    private static List<Set<List<String>>> groupRecords(List<List<String>> records) {
+        List<Set<List<String>>> groups = new ArrayList<>();
+        Map<Key, Set<List<String>>> valueToGroups = new HashMap<>();
 
         for (List<String> record : records) {
-            if (longest == null || record.size() > longest.size()) {
-                longest = record;
-            }
-        }
-
-        return longest;
-    }
-
-    private static Map<Integer, Set<List<String>>> groupUniqueRecords(List<List<String>> uniqueRecords) {
-        Map<Key, Integer> groupMapping = new HashMap<>();
-        Map<Integer, Set<List<String>>> groupedData = new HashMap<>();
-
-        int groupNumber = 0;
-        List<String> longestRecord = findLongestRecord(uniqueRecords);
-
-        Set<List<String>> initialGroup = new HashSet<>();
-        initialGroup.add(longestRecord);
-        groupedData.put(groupNumber, initialGroup);
-
-        for (int i = 0; i < longestRecord.size(); i++) {
-            Key key = new Key(longestRecord.get(i), i);
-            groupMapping.put(key, groupNumber);
-        }
-        groupNumber++;
-
-        for (List<String> record : uniqueRecords) {
-            boolean matched = false;
+            Set<Set<List<String>>> matchingGroups = new HashSet<>();
 
             for (int i = 0; i < record.size(); i++) {
-                Key key = new Key(record.get(i), i);
-
-                if (groupMapping.containsKey(key)) {
-                    int groupIndex = groupMapping.get(key);
-                    Set<List<String>> group = groupedData.get(groupIndex);
-                    group.add(record);
-
-                    for (int j = 0; j < record.size(); j++) {
-                        Key keyExtra = new Key(record.get(j), j);
-                        groupMapping.put(keyExtra, groupIndex);
+                String value = record.get(i);
+                if (!value.isEmpty()) {
+                    Key key = new Key(value, i);
+                    if (valueToGroups.containsKey(key)) {
+                        matchingGroups.add(valueToGroups.get(key));
                     }
-
-                    matched = true;
-                    break;
                 }
             }
 
-            if (!matched) {
+            if (matchingGroups.isEmpty()) {
                 Set<List<String>> newGroup = new HashSet<>();
                 newGroup.add(record);
-                groupedData.put(groupNumber, newGroup);
+                groups.add(newGroup);
                 for (int i = 0; i < record.size(); i++) {
-                    Key key = new Key(record.get(i), i);
-                    groupMapping.put(key, groupNumber);
+                    String value = record.get(i);
+                    if (!value.isEmpty()) {
+                        Key key = new Key(value, i);
+                        valueToGroups.put(key, newGroup);
+                    }
                 }
-                groupNumber++;
+            } else {
+                Set<List<String>> mergedGroup = matchingGroups.iterator().next();
+                for (Set<List<String>> group : matchingGroups) {
+                    if (group != mergedGroup) {
+                        mergedGroup.addAll(group);
+                        for (List<String> r : group) {
+                            for (int i = 0; i < r.size(); i++) {
+                                String value = r.get(i);
+                                if (!value.isEmpty()) {
+                                    valueToGroups.put(new Key(value, i), mergedGroup);
+                                }
+                            }
+                        }
+                        groups.remove(group);
+                    }
+                }
+                mergedGroup.add(record);
+                for (int i = 0; i < record.size(); i++) {
+                    String value = record.get(i);
+                    if (!value.isEmpty()) {
+                        valueToGroups.put(new Key(value, i), mergedGroup);
+                    }
+                }
             }
         }
 
-        return groupedData;
+        return groups;
     }
 
-    private static Map<Integer, Set<List<String>>> sortMapInDscOrder(Map<Integer, Set<List<String>>> groupedData) {
-        List<Map.Entry<Integer, Set<List<String>>>> entryList = new ArrayList<>(groupedData.entrySet());
-
-        entryList.sort((entry1, entry2) -> {
-            int size1 = entry1.getValue().size();
-            int size2 = entry2.getValue().size();
-            return Integer.compare(size2, size1);
-        });
-
-        Map<Integer, Set<List<String>>> sortedData = new LinkedHashMap<>();
-        for (Map.Entry<Integer, Set<List<String>>> entry : entryList) {
-            sortedData.put(entry.getKey(), entry.getValue());
-        }
-
-        return sortedData;
-    }
-
-
-    private static int countGroupsWithMultipleRecords(Map<Integer, Set<List<String>>> groupedData) {
-        int groupCount = 0;
-        for (Map.Entry<Integer, Set<List<String>>> entry : groupedData.entrySet()) {
-            if (entry.getValue().size() > 1) {
-                groupCount++;
-            }
-        }
-        return groupCount;
-    }
-
-    private static void writeResultsToFile(Map<Integer, Set<List<String>>> simplifiedGroups) throws IOException {
+    private static void writeResultsToFile(List<Set<List<String>>> groups) throws IOException {
         SimpleDateFormat dateFormat = new SimpleDateFormat("yyyyMMdd_HHmm");
         String filename = "output_" + dateFormat.format(new Date()) + ".txt";
 
-        FileWriter writer = new FileWriter(filename);
+        groups.sort((g1, g2) -> Integer.compare(g2.size(), g1.size()));
 
-        int groupCount = countGroupsWithMultipleRecords(simplifiedGroups);
+        try (FileWriter writer = new FileWriter(filename)) {
+            // Считаем группы с более чем одним элементом
+            long groupCount = groups.stream().filter(g -> g.size() > 1).count();
+            writer.write("Групп с более чем одной записью: " + groupCount);
+            writer.write("\n-------------------------\n");
 
-        writer.write("Групп с более чем одной записью: " + groupCount);
-        writer.write("\n-------------------------");
-
-        for (Map.Entry<Integer, Set<List<String>>> entry : simplifiedGroups.entrySet()) {
-            int groupId = entry.getKey();
-            Set<List<String>> groupRecords = entry.getValue();
-
-            writer.write("\nГруппа " + groupId + ":\n");
-
-            for (List<String> record : groupRecords) {
-                String formattedRecord = String.join(";", record);
-
-                writer.write(formattedRecord);
-                writer.write("\n");
+            int groupNumber = 1;
+            for (Set<List<String>> group : groups) {
+                if (group.size() > 1) {
+                    writer.write("Группа " + groupNumber + ":\n");
+                    for (List<String> record : group) {
+                        String formattedRecord = String.join(";", record);
+                        writer.write(formattedRecord + "\n");
+                    }
+                    writer.write("\n");
+                    groupNumber++;
+                }
             }
         }
-        writer.close();
     }
-
 }
-
